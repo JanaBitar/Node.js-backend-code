@@ -1,3 +1,13 @@
+npm init -y
+{
+  "scripts": {
+    "start": "node server.js"
+  }
+}
+npm install express body-parser cors pg
+git add package.json
+git commit -m "Add package.json"
+git push
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
