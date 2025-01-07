@@ -1,91 +1,52 @@
-npm init -y
-{
-  "scripts": {
-    "start": "node server.js"
-  }
-}
-npm install express body-parser cors pg
-git add package.json
-git commit -m "Add package.json"
-git push
-const express = require("express");
-const bodyParser = require("body-parser");
-const cors = require("cors");
-const { Pool } = require("pg");
+import 'dart:convert';
+import 'package:shelf/shelf.dart';
+import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:postgres/postgres.dart';
 
-const app = express();
-app.use(bodyParser.json());
-app.use(cors());
+void main() async {
+  final db = PostgreSQLConnection(
+    'mysql.awardspace.com',
+    5432,
+    '4572146_smartgrocerydb',
+    username: '4572146_smartgrocerydb',
+    password: 'Csci410j',
+  );
 
-const db = new Pool({
-    user: "4572146_smartgrocerydb",
-    host: "mysql.awardspace.com",
-    database: "4572146_smartgrocerydb",
-    password: "Csci410j",
-    port: 5432,
-});
+  await db.open();
 
-db.connect((err) => {
-    if (err) {
-        console.error("Database connection failed:", err);
-    } else {
-        console.log("Connected to the database.");
+  final handler = Pipeline().addMiddleware(logRequests()).addHandler((Request request) async {
+    if (request.url.path == 'pantry' && request.method == 'GET') {
+      final results = await db.query('SELECT * FROM Pantry');
+      final pantryItems = results.map((row) => {
+            'id': row[0],
+            'name': row[1],
+            'quantity': row[2],
+            'unit': row[3],
+            'expiration_date': row[4],
+          }).toList();
+      return Response.ok(jsonEncode(pantryItems), headers: {'Content-Type': 'application/json'});
     }
-});
 
-app.get("/pantry", (req, res) => {
-    db.query("SELECT * FROM Pantry", (err, result) => {
-        if (err) {
-            res.status(500).send(err);
-        } else {
-            res.json(result.rows);
-        }
-    });
-});
+    if (request.url.path == 'pantry' && request.method == 'POST') {
+      final body = await request.readAsString();
+      final data = jsonDecode(body);
+      await db.query(
+        'INSERT INTO Pantry (name, quantity, unit, expiration_date) VALUES (@name, @quantity, @unit, @expiration_date)',
+        substitutionValues: {
+          'name': data['name'],
+          'quantity': data['quantity'],
+          'unit': data['unit'],
+          'expiration_date': data['expiration_date'],
+        },
+      );
+      return Response.ok(jsonEncode({'message': 'Pantry item added successfully'}),
+          headers: {'Content-Type': 'application/json'});
+    }
 
-app.post("/pantry", (req, res) => {
-    const { name, quantity, unit, expiration_date } = req.body;
-    db.query(
-        "INSERT INTO Pantry (name, quantity, unit, expiration_date) VALUES ($1, $2, $3, $4) RETURNING *",
-        [name, quantity, unit, expiration_date],
-        (err, result) => {
-            if (err) {
-                res.status(500).send(err);
-            } else {
-                res.status(201).json(result.rows[0]);
-            }
-        }
-    );
-});
+    return Response.notFound('Route not found');
+  });
 
-app.put("/pantry/:id", (req, res) => {
-    const { id } = req.params;
-    const { name, quantity, unit, expiration_date } = req.body;
-    db.query(
-        "UPDATE Pantry SET name = $1, quantity = $2, unit = $3, expiration_date = $4 WHERE id = $5 RETURNING *",
-        [name, quantity, unit, expiration_date, id],
-        (err, result) => {
-            if (err) {
-                res.status(500).send(err);
-            } else {
-                res.status(200).json(result.rows[0]);
-            }
-        }
-    );
-});
-
-app.delete("/pantry/:id", (req, res) => {
-    const { id } = req.params;
-    db.query("DELETE FROM Pantry WHERE id = $1", [id], (err) => {
-        if (err) {
-            res.status(500).send(err);
-        } else {
-            res.status(204).send();
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+  const port = 8080;
+  final server = await shelf_io.serve(handler, 'localhost', port);
+  print('Server running on localhost:$port');
+}
